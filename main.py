@@ -209,38 +209,45 @@ def set_windows_autostart(app_name: str, enable: bool) -> None:
         return
 
     try:
-        startup = _startup_folder_win()
-        startup.mkdir(parents=True, exist_ok=True)
+        appdata = os.environ.get("APPDATA")
+        if not appdata:
+            return
 
-        vbs_path = startup / f"{app_name}_start.vbs"
-        bat_path = startup / f"{app_name}_start.bat"
+        startup_dir = Path(appdata) / r"Microsoft\Windows\Start Menu\Programs\Startup"
+        startup_dir.mkdir(parents=True, exist_ok=True)
 
-        if enable:
-            if getattr(sys, "frozen", False):
-                target_cmd = f'"{sys.executable}"'
+        bat_path = startup_dir / f"{app_name}_autostart.bat"
+
+        if not enable:
+            try:
+                bat_path.unlink()
+            except FileNotFoundError:
+                pass
+            return
+
+        if getattr(sys, "frozen", False):
+            target_cmd = f'"{sys.executable}"'
+            work_dir = Path(sys.executable).parent
+        else:
+            script = Path(__file__).resolve()
+            pyw = Path(sys.executable).with_name("pythonw.exe")
+            if pyw.exists():
+                py = pyw
             else:
                 py = Path(sys.executable)
-                pyw = py.with_name("pythonw.exe")
-                runner = pyw if pyw.exists() else py
-                target_cmd = f'"{runner}" "{Path(__file__).resolve()}"'
 
-            vbs = (
-                'Set WshShell = CreateObject("WScript.Shell")\n'
-                f'WshShell.Run {json.dumps(target_cmd)}, 0, False\n'
-            )
-            vbs_path.write_text(vbs, encoding="utf-8")
+            target_cmd = f'"{py}" "{script}"'
+            work_dir = script.parent
 
-            if bat_path.exists():
-                bat_path.unlink(missing_ok=True)
+        bat_content = f"""@echo off
+cd /d "{work_dir}"
+start "" {target_cmd}
+"""
 
-        else:
-            if vbs_path.exists():
-                vbs_path.unlink(missing_ok=True)
-            if bat_path.exists():
-                bat_path.unlink(missing_ok=True)
+        bat_path.write_text(bat_content, encoding="utf-8")
 
     except Exception:
-        pass
+        return
 
 
 
